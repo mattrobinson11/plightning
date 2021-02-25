@@ -11,7 +11,7 @@ import pytorch_lightning as pl
 from pl_bolts.datamodules import SklearnDataModule
 
 from plmodel import LinearRegression
-from utils import find_model_path
+
 
 
 def cli_main(args, name: str = 'deep_lob'):
@@ -19,7 +19,7 @@ def cli_main(args, name: str = 'deep_lob'):
     pl.seed_everything(1234)    
 
     # Create some toy data
-    input_dim = args.input_dim
+    input_dim = args.inputdim
     n_samples = args.nsamples
     print(f'feature dimension: ({n_samples}, {input_dim})')
     rng = np.random.RandomState(0)
@@ -50,21 +50,17 @@ def cli_main(args, name: str = 'deep_lob'):
     
     # Configure checkpoints and paths
     outputdata_dir = os.environ.get('SM_OUTPUT_DATA_DIR', 'output')
-    #tensorboard_dir = os.path.join(outputdata_dir, 'tensorboard')
-    tensorboard_dir = "/opt/ml/output/tensorboard"
+    tensorboard_dir = "/opt/ml/output/tensorboard/"
     print(tensorboard_dir, os.path.exists(tensorboard_dir))
 
-    checkpoint_dir = "/opt/ml/checkpoints" #os.path.join(outputdata_dir, 'checkpoint')
+    checkpoint_dir = '/opt/ml/checkpoints/'
     print(checkpoint_dir, os.path.exists(checkpoint_dir))
-    has_checkpoints = False
-    if os.path.exists(checkpoint_dir):
-        has_checkpoints = len(os.path.listdir(checkpoint_dir))>0
-    
+
     logger = pl.loggers.TensorBoardLogger(tensorboard_dir)
     es_cb = pl.callbacks.EarlyStopping(
         monitor="val_loss", 
         min_delta=0., 
-        patience=5, 
+        patience=3, 
         verbose=False, 
         mode="min"
     )
@@ -93,17 +89,7 @@ def cli_main(args, name: str = 'deep_lob'):
         logger=logger,
         callbacks=callbacks,
     )
-    print(pl_training_kwargs)
-    if args.resume or has_checkpoints:
-        resume_from_checkpoint = utils.find_model_path(mc_cb, "epoch")  # This should be a flag really...
-        if os.path.exists(resume_from_checkpoint):
-            print(f"INFO: Loading latest checkpoint from {resume_from_checkpoint}")
-            # model = AlphaModule.load_from_checkpoint(resume_from_checkpoint)
-            pl_training_kwargs["resume_from_checkpoint"] = resume_from_checkpoint
-        else:
-            raise IOError(
-                f"WTF you should have checkpoints to load from {resume_from_checkpoint}"
-            )
+    os.environ['NODE_RANK']=str(int(os.environ['CURRENT_HOST'].split("-")[1])-1)
     trainer = pl.Trainer.from_argparse_args(args, **trainer_kwargs)
     tune_result = trainer.tune(model)
     # Fit the model
@@ -120,28 +106,18 @@ def cli_main(args, name: str = 'deep_lob'):
     
 if __name__ == '__main__':
   
-  resource_config = json.loads(os.environ.get("SM_RESOURCE_CONFIG", "{}"))
-  print(os.environ)
-    #if len(resource_config)>0:
-    # On sagemaker we need to ensure that the path
-    #os.environ["NCCL_SOCKET_IFNAME"] = resource_config["network_interface_name"]
-    # COUlD CALL IT NODE_RANK OR GROUP_RANK
-  if resource_config:
-    hosts = resource_config['hosts']
-    current_host = resource_config['current_host']
-    rank = hosts.index(current_host)
-    os.environ['GROUP_RANK'] = str(rank)
+    resource_config = json.loads(os.environ.get("SM_RESOURCE_CONFIG", "{}"))
+    print(os.environ)
 
-  parser = ArgumentParser()
-  parser = LinearRegression.add_model_specific_args(parser)
-  parser = SklearnDataModule.add_argparse_args(parser)
-  parser = pl.Trainer.add_argparse_args(parser)
-  
-  parser.add_argument('--model-dir', type=str, default=os.environ.get('SM_MODEL_DIR', 'model_output'))
-  parser.add_argument('--input-dim', type=int, default=40)
-  parser.add_argument('--nsamples', type=int, default=50000)
-  parser.add_argument('--resume', default=False, action='store_true')
-  
-  args = parser.parse_args()
-  cli_main(args, name='deep_lob')
-  print("Job finished!")
+    parser = ArgumentParser()
+    parser = LinearRegression.add_model_specific_args(parser)
+    parser = SklearnDataModule.add_argparse_args(parser)
+    parser = pl.Trainer.add_argparse_args(parser)
+
+    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', 'model_output'))
+    parser.add_argument('--inputdim', type=int, default=30)
+    parser.add_argument('--nsamples', type=int, default=5000000)
+
+    args = parser.parse_args()
+    cli_main(args, name='deep_lob')
+    print("Job finished!")
